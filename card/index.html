@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>玄雷青龙 · Holo Card</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; }
+  body {
+    background:#fafafa; color:#23261f; overflow:hidden;
+    display:flex; flex-direction:column;
+    font-family:system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  header { text-align:center; padding:26px 16px 10px; flex:none; }
+  .view-tag { font-size:11px; letter-spacing:.42em; color:#9aa08f; margin-bottom:8px; }
+  h1 { font-family:"Songti SC", "Noto Serif SC", Georgia, serif; font-size:clamp(20px, 3vw, 28px);
+       font-weight:600; letter-spacing:.18em; color:#2c2f27; }
+  .subtitle { margin-top:6px; font-size:12.5px; letter-spacing:.3em; color:#8b9080; }
+  main { flex:1; min-height:0; position:relative; }
+  #stage { position:absolute; inset:0; outline:none; touch-action:none; cursor:grab; }
+  #stage.dragging { cursor:grabbing; }
+  #stage canvas { display:block; }
+  #loading { position:absolute; inset:0; display:flex; flex-direction:column; gap:12px;
+             align-items:center; justify-content:center; color:#8b9080; font-size:13.5px;
+             letter-spacing:.2em; }
+  #loading::before { content:""; width:34px; height:34px; border-radius:50%;
+             border:2px solid #d9dccf; border-top-color:#8b9080; animation:spin 1s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  #loading.error { color:#a05b4b; } #loading.error::before { display:none; }
+  #loading button { padding:6px 16px; border:1px solid #c8ccbd; background:#fff; border-radius:8px;
+             cursor:pointer; font-size:13px; }
+  .toolbar { flex:none; display:flex; align-items:center; justify-content:center; gap:8px;
+             flex-wrap:wrap; padding:12px 14px 20px; }
+  .toolbar .seg { display:flex; border:1px solid #d9dccf; border-radius:999px; overflow:hidden;
+                  background:#fff; }
+  .toolbar button, .toolbar a.btn {
+    border:1px solid #d9dccf; background:#fff; color:#3c4033; font-size:12.5px;
+    padding:7px 13px; cursor:pointer; border-radius:999px; text-decoration:none;
+    letter-spacing:.08em; transition:all .18s; }
+  .toolbar button:hover, .toolbar a.btn:hover { border-color:#8b9080; }
+  .toolbar .seg button { border:none; border-radius:0; padding:7px 12px; }
+  .toolbar .seg button + button { border-left:1px solid #e4e6dc; }
+  .toolbar button[aria-pressed="true"] { background:#2c2f27; color:#f4f5ef; }
+  .finish-name { font-size:12px; color:#8b9080; letter-spacing:.14em; min-width:4.5em; text-align:center; }
+  .v-div { width:1px; height:18px; background:#d9dccf; margin:0 4px; }
+  #notice { position:fixed; left:50%; bottom:86px; transform:translateX(-50%); z-index:9;
+            background:rgba(44,47,39,.92); color:#f4f5ef; font-size:13px; letter-spacing:.08em;
+            padding:9px 18px; border-radius:999px; pointer-events:none; }
+  /* 极简模式：只显示卡片本体。引擎仍引用 header/toolbar 内的元素 id，
+     故用 display:none 隐藏而非删除（改引擎需重打 bundle，这里零改动）。 */
+  header, .toolbar { display:none; }
+  .rescue { position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:9;
+            max-width:88vw; padding:10px 16px; border-radius:12px; font-size:13px; line-height:1.7;
+            color:#8a5a10; background:rgba(255,244,214,.96); border:1px solid rgba(214,160,60,.55);
+            box-shadow:0 8px 30px rgba(0,0,0,.12); text-align:center; }
+
+  .fallback3d { position:absolute; inset:0; perspective:1000px; display:flex; align-items:center;
+                justify-content:center; padding:26px 40px; }
+  .flipper3d { position:relative; height:100%; aspect-ratio:2/3; max-width:100%;
+               transform-style:preserve-3d; will-change:transform; }
+  .card3d { position:absolute; inset:0; transform-style:preserve-3d; will-change:transform; }
+  .face3d { position:absolute; inset:0; transform-style:preserve-3d; backface-visibility:hidden;
+            -webkit-backface-visibility:hidden;
+            box-shadow:0 30px 60px -22px rgba(36,38,37,.4), 0 6px 14px rgba(36,38,37,.14); }
+  .layer3d { position:absolute; inset:0; will-change:transform; }
+  .layer3d img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
+  .foil3d { position:absolute; inset:0; transform:translateZ(0); pointer-events:none;
+            opacity:var(--foil-amount, .6); }
+  .foil3d::after { content:""; position:absolute; inset:0;
+                   background:radial-gradient(55% 40% at var(--mx,50%) var(--my,45%),
+                   rgba(255,238,190,.65), transparent 70%); mix-blend-mode:screen; }
+  .finish-gold .foil3d { background:linear-gradient(118deg, rgba(230,180,80,.55),
+     rgba(201,162,74,.18) 45%, rgba(255,244,210,.12) 70%); mix-blend-mode:overlay; }
+  .finish-pearl .foil3d { background:linear-gradient(118deg, rgba(255,255,255,.4),
+     rgba(200,205,215,.12) 50%, rgba(255,255,255,.3) 75%); mix-blend-mode:soft-light; }
+  .finish-original .foil3d { display:none; }
+  .back3d { transform:rotateY(180deg);
+            background:linear-gradient(135deg, #d8b45e, #f0d89a 38%, #b78a3a 70%, #e3c06b); }
+  .back3d::before { content:""; position:absolute; inset:0;
+     background:repeating-linear-gradient(115deg, rgba(255,255,255,.14) 0 2px, transparent 2px 14px); }
+  .back-mark { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+               font-family:"Songti SC", serif; font-size:34px; letter-spacing:.3em;
+               color:rgba(90,62,12,.85); }
+  @media (max-width:760px){ .fallback3d{padding:18px 22px;}
+     .flipper3d{width:100%;height:auto;aspect-ratio:2/3;} }
+</style>
+</head>
+<body>
+  <div class="rescue" id="rescue" hidden>⚠ 卡片资源未加载：请先把 zip <b>完整解压</b>到文件夹，再双击解压出的 index.html。<br>在压缩包里直接双击、或只拷出 html 单文件时，资源都不可用。</div>
+  
+  <header>
+    <p class="view-tag"><span id="view-label">01 / FRONT</span></p>
+    <h1 id="card-title">玄雷青龙</h1>
+    <p class="subtitle" id="subtitle">九霄御灵圣龙</p>
+  </header>
+  <main>
+    <div id="stage" tabindex="0" role="application" aria-label="3D 卡片展台，可拖动旋转"></div>
+    <div id="loading"><span>正在加载卡片…</span></div>
+  </main>
+  <nav class="toolbar" aria-label="卡片控制">
+    <div class="seg" role="group" aria-label="工艺效果">
+      <button data-finish="holographic">镭射</button>
+      <button data-finish="pearl">珠贝</button>
+      <button data-finish="gold">鎏金</button>
+      <button data-finish="original">原画</button>
+    </div>
+    <span class="finish-name" id="finish-name"></span>
+    <span class="v-div"></span>
+    <button id="front" aria-pressed="true">正面</button>
+    <button id="back" aria-pressed="false">背面</button>
+    <button id="auto" title="自动摆动（空格）">▶</button>
+    <button id="reset-btn" title="复位（R）">⟲</button>
+    <span class="v-div"></span>
+    <button id="save-png" title="保存当前面 PNG">⬇ PNG</button>
+    <a id="save-glb" class="btn" href="./assets/card-full.glb" download>⬇ GLB</a>
+  </nav>
+  <div id="notice" hidden></div>
+  
+  <script src="./assets-embed.js" onerror="document.getElementById('rescue').hidden=false"></script>
+  <script src="./app-embed.iife.js" onerror="document.getElementById('rescue').hidden=false"></script>
+</body>
+</html>
